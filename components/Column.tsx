@@ -5,6 +5,13 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import type { Issue, Status } from "@/lib/types";
 import IssueCard from "./IssueCard";
 
+const DOT_COLORS: Record<Status, string> = {
+  backlog: "#9ca3af",
+  todo: "#60a5fa",
+  in_progress: "#f59e0b",
+  done: "#34d399",
+};
+
 interface Props {
   status: Status;
   label: string;
@@ -17,10 +24,13 @@ export default function Column({ status, label, issues, onStatusChange }: Props)
 
   return (
     <div ref={setNodeRef} className={`column ${isOver ? "over" : ""}`}>
-      <h2>
-        {label}
+      <div className="column-header">
+        <span className="column-title">
+          <span className="column-dot" style={{ background: DOT_COLORS[status] }} />
+          {label}
+        </span>
         <span className="count">{issues.length}</span>
-      </h2>
+      </div>
       <SortableContext items={issues.map((i) => i.id)} strategy={verticalListSortingStrategy}>
         {issues.map((issue) => (
           <IssueCard key={issue.id} issue={issue} onStatusChange={onStatusChange} />
