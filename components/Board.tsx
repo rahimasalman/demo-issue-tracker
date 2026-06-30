@@ -36,10 +36,12 @@ export default function Board() {
   );
 
   useEffect(() => {
-    api<Issue[]>("/api/issues").then((data) => {
-      setIssues(data);
-      setLoading(false);
-    });
+    api<Issue[]>("/api/issues")
+      .then((data) => {
+        setIssues(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
 
   const byStatus = useMemo(() => {
@@ -65,19 +67,25 @@ export default function Board() {
     const value = title.trim();
     if (!value) return;
     setTitle("");
-    const created = await api<Issue>("/api/issues", {
+    api<Issue>("/api/issues", {
       method: "POST",
       body: JSON.stringify({ title: value, status: "backlog" }),
-    });
-    setIssues((prev) => [...prev, created]);
+    })
+      .then((created) => setIssues((prev) => [...prev, created]))
+      .catch(() => setTitle(value));
   }
 
   async function handleStatusChange(id: string, status: Status) {
-    const updated = await api<Issue>(`/api/issues/${id}`, {
+    const prev = issues.find((i) => i.id === id);
+    setIssues((all) => all.map((i) => (i.id === id ? { ...i, status } : i)));
+    api<Issue>(`/api/issues/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
-    });
-    setIssues((prev) => prev.map((i) => (i.id === id ? updated : i)));
+    })
+      .then((updated) => setIssues((all) => all.map((i) => (i.id === id ? updated : i))))
+      .catch(() => {
+        if (prev) setIssues((all) => all.map((i) => (i.id === id ? prev : i)));
+      });
   }
 
   function handleDragOver(event: DragOverEvent) {
@@ -103,23 +111,30 @@ export default function Board() {
     const to = findContainer(over.id as string);
     if (!to) return;
 
-    let column = byStatus[to];
-    const fromIdx = column.findIndex((i) => i.id === active.id);
-    const toIdx = column.findIndex((i) => i.id === over.id);
-    if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
-      column = arrayMove(column, fromIdx, toIdx);
-    }
-
-    const orderedIds = column.map((i) => i.id);
-    setIssues((prev) =>
-      prev.map((i) => {
+    // Read live issues state to avoid stale byStatus from the previous render
+    let orderedIds: string[] = [];
+    setIssues((prev) => {
+      let column = [...prev]
+        .filter((i) => i.status === to)
+        .sort((a, b) => a.order - b.order);
+      const fromIdx = column.findIndex((i) => i.id === active.id);
+      const toIdx = column.findIndex((i) => i.id === over.id);
+      if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
+        column = arrayMove(column, fromIdx, toIdx);
+      }
+      orderedIds = column.map((i) => i.id);
+      return prev.map((i) => {
         const idx = orderedIds.indexOf(i.id);
         return idx === -1 ? i : { ...i, status: to, order: idx };
-      }),
-    );
+      });
+    });
+
     await api(`/api/columns/${to}/reorder`, {
       method: "PUT",
       body: JSON.stringify({ orderedIds }),
+    }).catch(() => {
+      // Refetch on reorder failure to restore consistent server state
+      api<Issue[]>("/api/issues").then(setIssues).catch(() => {});
     });
   }
 
